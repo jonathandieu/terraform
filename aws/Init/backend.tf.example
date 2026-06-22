@@ -1,0 +1,20 @@
+# Example backend configuration for using AWS S3
+# Copy this to your other AWS Terraform configurations and update the key
+
+terraform {
+  backend "s3" {
+    bucket         = "terraform-state-aws-prod"
+    key            = "aws-stage-networking/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "terraform-state-locks-prod"
+    encrypt        = true
+  }
+}
+
+# To use this backend:
+# 1. Update the bucket name to match your created bucket
+# 2. Update the key to reflect your module path
+# 3. Set your AWS credentials as environment variables:
+#    export AWS_ACCESS_KEY_ID="your-access-key"
+#    export AWS_SECRET_ACCESS_KEY="your-secret-key"
+#    export AWS_DEFAULT_REGION="us-east-1"

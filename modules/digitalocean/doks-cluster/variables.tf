@@ -8,7 +8,7 @@ variable "region" {
   type        = string
   validation {
     condition = contains([
-      "nyc1", "nyc3", "ams3", "sfo3", "sgp1", "lon1", "fra1", "tor1", "blr1", "syd1"
+      "nyc1", "nyc3", "ams3", "sfo3", "sgp1", "lon1", "fra1", "tor1", "blr1", "syd1", "atl1"
     ], var.region)
     error_message = "Must be a valid DigitalOcean region slug."
   }

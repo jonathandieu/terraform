@@ -12,16 +12,10 @@ data "digitalocean_kubernetes_versions" "main" {
   version_prefix = "${var.kubernetes_version_prefix}."
 }
 
-resource "digitalocean_vpc" "main" {
-  name   = "${var.name}-vpc"
-  region = var.region
-}
-
 resource "digitalocean_kubernetes_cluster" "main" {
-  name     = var.name
-  region   = var.region
-  version  = data.digitalocean_kubernetes_versions.main.latest_version
-  vpc_uuid = digitalocean_vpc.main.id
+  name    = var.name
+  region  = var.region
+  version = data.digitalocean_kubernetes_versions.main.latest_version
 
   node_pool {
     name       = "${var.name}-pool"
@@ -44,9 +38,8 @@ resource "digitalocean_kubernetes_cluster" "main" {
 # service.beta.kubernetes.io/do-loadbalancer-id annotation so the
 # IP is stable and known before ingress is deployed.
 resource "digitalocean_loadbalancer" "main" {
-  name     = "${var.name}-lb"
-  region   = var.region
-  vpc_uuid = digitalocean_vpc.main.id
+  name   = "${var.name}-lb"
+  region = var.region
 
   forwarding_rule {
     entry_port      = 80

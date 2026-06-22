@@ -1,0 +1,11 @@
+# DigitalOcean API Token
+# Get from: https://cloud.digitalocean.com/account/api/tokens
+do_token = "your-do-api-token"
+
+# DigitalOcean Spaces Credentials
+# Get from: https://cloud.digitalocean.com/account/api/spaces
+# These are REQUIRED for creating Spaces buckets
+spaces_access_id  = "your-spaces-access-key-id"
+spaces_secret_key = "your-spaces-secret-key"
+
+

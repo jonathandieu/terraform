@@ -41,11 +41,6 @@ output "lb_id" {
   value       = digitalocean_loadbalancer.main.id
 }
 
-output "vpc_id" {
-  description = "VPC ID"
-  value       = digitalocean_vpc.main.id
-}
-
 output "project_id" {
   description = "DigitalOcean project ID"
   value       = digitalocean_project.main.id
