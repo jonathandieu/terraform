@@ -35,7 +35,7 @@ provider "helm" {
 module "cluster" {
   source = "../../modules/digitalocean/doks-cluster"
 
-  name                      = "dieubernetes-do-platform-atl1"
+  name                      = "dieubernetes-platform-do-atl1"
   region                    = "atl1"
   node_size                 = "s-2vcpu-8gb-amd"
   min_nodes                 = 1
@@ -89,7 +89,7 @@ resource "helm_release" "argocd_root" {
       source = {
         repoURL        = var.gitops_repo_url
         targetRevision = "HEAD"
-        path           = "apps"
+        path           = "argocd/apps"
         directory      = { recurse = true }
       }
       destination = {
@@ -111,16 +111,16 @@ resource "helm_release" "argocd_root" {
 # No CLI step needed — this replaces `dieuctl argocd register` for platform clusters.
 resource "kubernetes_secret" "argocd_cluster" {
   metadata {
-    name      = "dieubernetes-do-platform-atl1"
+    name      = "platform-do-atl1"
     namespace = kubernetes_namespace.argocd.metadata[0].name
     labels = {
       "argocd.argoproj.io/secret-type" = "cluster"
-      "tier"                            = "platform"
+      "purpose"                         = "platform"
     }
   }
 
   data = {
-    name   = "dieubernetes-do-platform-atl1"
+    name   = "platform-do-atl1"
     server = "https://kubernetes.default.svc"
     config = jsonencode({ tlsClientConfig = { insecure = false } })
   }

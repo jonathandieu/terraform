@@ -2,7 +2,7 @@ terraform {
   cloud {
     organization = "dieubernetes"
     workspaces {
-      name = "dieubernetes-do-platform-atl1"
+      name = "dieubernetes-platform-do-atl1"
     }
   }
 }

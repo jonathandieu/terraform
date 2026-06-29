@@ -141,6 +141,8 @@ All apps deploy to every `tier: workload` cluster via ApplicationSets in `dieube
 
 All routing uses Gateway API (`HTTPRoute`) — no `Ingress` resources. Envoy Gateway is cloud-agnostic; the pre-provisioned LB is adopted via cloud-specific annotations on the `EnvoyProxy` resource:
 
+> Why Envoy Gateway over Traefik / nginx / Cilium: see [ADR 0001](adr/0001-gateway-api-implementation.md).
+
 | Cloud | Pre-provision | Annotation |
 |---|---|---|
 | DigitalOcean | `digitalocean_loadbalancer` | `do-loadbalancer-id` |

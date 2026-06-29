@@ -56,9 +56,17 @@ Pinned to `1.15.6` via `.terraform-version` (read by asdf). Global `~/.tool-vers
 
 ## Cluster naming convention
 
-`dieubernetes-{provider}-{tier}-{region}`
+`dieubernetes-{tier}-{provider}-{region}`
 
-Examples: `dieubernetes-do-platform-atl1`, `dieubernetes-do-stage-atl1`, `dieubernetes-do-main-atl1`
+- `tier`: purpose of the cluster — `platform`, `prod`, `stage`
+- `provider`: cloud provider shorthand — `do`, `aws`
+- `region`: provider region slug — `atl1`, `nyc3`, `us-east-2`
+
+Examples: `dieubernetes-platform-do-atl1`, `dieubernetes-prod-do-nyc3`, `dieubernetes-stage-aws-us-east-2`
+
+The ArgoCD cluster secret `name` field uses the short form `{tier}-{provider}-{region}` (e.g. `platform-do-atl1`) — the `dieubernetes-` prefix is implicit within ArgoCD and omitting it keeps Application names readable. The DOKS cluster name, TFC workspace, and dieuctl arguments all use the full name.
+
+The ArgoCD cluster secret label key is `purpose` (not `tier`, to avoid RBAC confusion).
 
 ## Cluster layout
 
@@ -66,7 +74,7 @@ Each cluster directory is a thin Terraform root that calls `modules/digitalocean
 
 ```
 clusters/
-  dieubernetes-do-platform-atl1/
+  dieubernetes-platform-do-atl1/
     main.tf        # module call + ArgoCD resources (platform only)
     backend.tf     # TFC cloud block
     variables.tf   # argocd_* vars (platform only)
