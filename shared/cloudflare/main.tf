@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.0"
+  required_version = ">= 1.10"
   required_providers {
     cloudflare = {
       source  = "cloudflare/cloudflare"
@@ -8,84 +8,52 @@ terraform {
   }
 }
 
-# Configure Cloudflare provider
-provider "cloudflare" {
-  api_token = var.cloudflare_api_token
-}
+provider "cloudflare" {}
 
-# Create DNS zone for your domain
-resource "cloudflare_zone" "main" {
-  account = var.cloudflare_account_id
-  name    = var.domain_name
-}
-
-# Create DNS records for production
-resource "cloudflare_record" "prod_main" {
-  zone_id = cloudflare_zone.main.id
-  name    = "@"
-  value   = var.prod_load_balancer_ip
-  type    = "A"
-  ttl     = 300
-  proxied = true
-}
-
-resource "cloudflare_record" "prod_www" {
-  zone_id = cloudflare_zone.main.id
-  name    = "www"
-  value   = var.domain_name
-  type    = "CNAME"
-  ttl     = 300
-  proxied = true
-}
-
-resource "cloudflare_record" "prod_api" {
-  zone_id = cloudflare_zone.main.id
-  name    = "api"
-  value   = var.prod_api_gateway_ip
-  type    = "A"
-  ttl     = 300
-  proxied = true
-}
-
-# Create DNS records for staging
-resource "cloudflare_record" "stage_main" {
-  zone_id = cloudflare_zone.main.id
-  name    = "stage"
-  value   = var.stage_load_balancer_ip
-  type    = "A"
-  ttl     = 300
-  proxied = true
-}
-
-resource "cloudflare_record" "stage_api" {
-  zone_id = cloudflare_zone.main.id
-  name    = "api-stage"
-  value   = var.stage_api_gateway_ip
-  type    = "A"
-  ttl     = 300
-  proxied = true
-}
-
-# Configure Cloudflare settings for performance and security
-resource "cloudflare_zone_settings_override" "main" {
-  zone_id = cloudflare_zone.main.id
-
-  settings {
-    ssl                      = "full"
-    min_tls_version          = "1.2"
-    security_level           = "medium"
-    always_use_https        = "on"
-    automatic_https_rewrites = "on"
-    browser_check           = "on"
-    challenge_ttl           = 1800
-    privacy_pass           = "on"
-    websockets             = "on"
-    opportunistic_encryption = "on"
-    tls_1_3               = "on"
-    minify {
-      css  = "on"
-      html = "on"
-      js   = "on"
-    }
+data "cloudflare_zone" "main" {
+  filter = {
+    name = var.zone_name
   }
+}
+
+data "terraform_remote_state" "primary_cluster" {
+  backend = "remote"
+  config = {
+    organization = "dieubernetes"
+    workspaces = { name = var.primary_cluster_workspace }
+  }
+}
+
+locals {
+  lb_ip = data.terraform_remote_state.primary_cluster.outputs.lb_ip
+}
+
+# Apex A — proxied; always derived from primary cluster state, never hardcoded
+resource "cloudflare_dns_record" "apex" {
+  zone_id = data.cloudflare_zone.main.id
+  name    = "@"
+  type    = "A"
+  content = local.lb_ip
+  proxied = true
+  ttl     = 1
+}
+
+# www CNAME → apex
+resource "cloudflare_dns_record" "www" {
+  zone_id = data.cloudflare_zone.main.id
+  name    = "www"
+  type    = "CNAME"
+  content = var.zone_name
+  proxied = true
+  ttl     = 1
+}
+
+# argocd — not proxied so cert-manager HTTP-01 challenges reach the cluster directly
+resource "cloudflare_dns_record" "argocd" {
+  zone_id = data.cloudflare_zone.main.id
+  name    = "argocd"
+  type    = "A"
+  content = local.lb_ip
+  proxied = false
+  ttl     = 1
 }

@@ -1,8 +1,6 @@
-# Terraform Cloud Backend Configuration
-
 terraform {
-  backend "remote" {
-    organization = "dieu"
+  cloud {
+    organization = "dieubernetes"
     workspaces {
       name = "cloudflare"
     }
