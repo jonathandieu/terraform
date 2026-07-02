@@ -1,39 +1,15 @@
-variable "cloudflare_api_token" {
-  description = "Cloudflare API token"
-  type        = string
-  sensitive   = true
-}
-
 variable "cloudflare_account_id" {
   description = "Cloudflare account ID"
   type        = string
 }
 
-variable "domain_name" {
-  description = "Your domain name (e.g., example.com)"
+variable "zone_name" {
+  description = "Cloudflare zone name"
   type        = string
+  default     = "dieu.dev"
 }
 
-variable "prod_load_balancer_ip" {
-  description = "Production load balancer IP address"
+variable "primary_cluster_workspace" {
+  description = "TFC workspace name of the active platform cluster — apex and argocd DNS point at its lb_ip"
   type        = string
-  default     = ""
-}
-
-variable "prod_api_gateway_ip" {
-  description = "Production API gateway IP address"
-  type        = string
-  default     = ""
-}
-
-variable "stage_load_balancer_ip" {
-  description = "Staging load balancer IP address"
-  type        = string
-  default     = ""
-}
-
-variable "stage_api_gateway_ip" {
-  description = "Staging API gateway IP address"
-  type        = string
-  default     = ""
 }
