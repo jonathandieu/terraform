@@ -118,7 +118,7 @@ resource "kubernetes_secret" "argocd_cluster" {
     namespace = kubernetes_namespace.argocd.metadata[0].name
     labels = {
       "argocd.argoproj.io/secret-type" = "cluster"
-      "tier"                            = "platform"
+      "tier"                           = "platform"
     }
   }
 

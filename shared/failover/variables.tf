@@ -13,8 +13,8 @@ variable "cloudflare_zone_name" {
 variable "clusters" {
   description = "Clusters the Worker monitors. Updated by dieuctl when clusters are registered."
   type = list(object({
-    name   = string
-    lb_ip  = string
+    name  = string
+    lb_ip = string
   }))
   default = []
 }
