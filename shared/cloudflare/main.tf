@@ -74,14 +74,14 @@ resource "cloudflare_zone_settings_override" "main" {
     ssl                      = "full"
     min_tls_version          = "1.2"
     security_level           = "medium"
-    always_use_https        = "on"
+    always_use_https         = "on"
     automatic_https_rewrites = "on"
-    browser_check           = "on"
-    challenge_ttl           = 1800
-    privacy_pass           = "on"
-    websockets             = "on"
+    browser_check            = "on"
+    challenge_ttl            = 1800
+    privacy_pass             = "on"
+    websockets               = "on"
     opportunistic_encryption = "on"
-    tls_1_3               = "on"
+    tls_1_3                  = "on"
     minify {
       css  = "on"
       html = "on"

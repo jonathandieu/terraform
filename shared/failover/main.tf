@@ -24,10 +24,10 @@ resource "cloudflare_workers_kv_namespace" "state" {
 
 # Worker script — health checks + status API
 resource "cloudflare_workers_script" "failover" {
-  account_id = var.cloudflare_account_id
-  script_name     = "dieubernetes-failover"
-  content    = file("${path.module}/worker.js")
-  module     = true
+  account_id  = var.cloudflare_account_id
+  script_name = "dieubernetes-failover"
+  content     = file("${path.module}/worker.js")
+  module      = true
 
   kv_namespace_binding {
     name         = "STATE"
@@ -52,7 +52,7 @@ resource "cloudflare_dns_record" "status" {
   zone_id = data.cloudflare_zone.main.id
   name    = "status"
   type    = "A"
-  content = "192.0.2.1"  # dummy — CF never forwards to this when proxied + route active
+  content = "192.0.2.1" # dummy — CF never forwards to this when proxied + route active
   proxied = true
   ttl     = 1
 }
