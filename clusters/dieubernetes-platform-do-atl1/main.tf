@@ -37,7 +37,9 @@ module "cluster" {
 
   name                      = "dieubernetes-platform-do-atl1"
   region                    = "atl1"
-  node_size                 = "s-2vcpu-8gb-amd"
+  # Bumped from s-2vcpu-8gb: platform was at ~95% memory; the extra headroom hosts
+  # the Authentik IdP (self-hosted SSO). Changing node_size replaces the pool.
+  node_size                 = "s-4vcpu-16gb-amd"
   min_nodes                 = 1
   max_nodes                 = 1
   kubernetes_version_prefix = "1.36"
