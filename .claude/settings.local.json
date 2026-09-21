@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/jonathandieu/.tenv/**)",
+      "Read(//Users/jonathandieu/.config/tenv/**)",
+      "WebSearch",
+      "Bash(go build *)",
+      "Bash(go clean *)",
+      "Bash(helm show *)",
+      "Bash(helm search *)",
+      "Bash(helm repo *)"
+    ]
+  }
+}

@@ -1,0 +1,18 @@
+
+variable "argocd_admin_password_bcrypt" {
+  description = "Bcrypt hash of the ArgoCD admin password. Set as a sensitive TFC workspace variable by dieuctl cluster create."
+  type        = string
+  sensitive   = true
+}
+
+variable "gitops_repo_url" {
+  description = "HTTPS URL of the dieubernetes GitOps repo."
+  type        = string
+  default     = "https://github.com/jonathandieu/dieubernetes"
+}
+
+variable "argocd_version" {
+  description = "ArgoCD Helm chart version."
+  type        = string
+  default     = "9.7.0"
+}

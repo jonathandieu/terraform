@@ -1,0 +1,25 @@
+# Example backend configuration for using DigitalOcean Spaces
+# Copy this to your other Terraform configurations and update the bucket name
+
+terraform {
+  backend "s3" {
+    endpoint                    = "nyc3.digitaloceanspaces.com"
+    bucket                     = "terraform-state-prod"
+    key                        = "your-module/terraform.tfstate"
+    region                     = "us-east-1"  # Required by S3 backend, but not used
+    skip_credentials_validation = true
+    skip_metadata_api_check    = true
+    force_path_style           = true
+
+    # Optional: Enable state locking with DynamoDB equivalent
+    # dynamodb_endpoint = "nyc3.digitaloceanspaces.com"
+    # dynamodb_table    = "terraform-state-locks"
+  }
+}
+
+# To use this backend:
+# 1. Update the bucket name to match your created bucket
+# 2. Update the key to reflect your module path
+# 3. Set your DigitalOcean access keys as environment variables:
+#    export SPACES_ACCESS_KEY_ID="your-access-key"
+#    export SPACES_SECRET_ACCESS_KEY="your-secret-key"
