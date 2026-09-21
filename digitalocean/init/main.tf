@@ -1,3 +1,5 @@
+# Not wired to any backend today (state lives in TFC-native cloud{} blocks);
+# kept in case of a future migration off TFC-managed state.
 resource "digitalocean_spaces_bucket" "terraform_state" {
   name   = "terraform-state-do"
   region = "nyc3"
