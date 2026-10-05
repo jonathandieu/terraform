@@ -11,5 +11,6 @@
 # terraform.tfvars files
 terraform.tfvars
 
-# .env files
+# .env files (keep the checked-in example)
 .env*
+!.env.tpl.example

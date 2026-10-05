@@ -1,3 +1,7 @@
+# Bootstrap only (manual apply). No backend / TFC workspace.
+# Cluster and shared roots store state in TFC (see clusters/*/backend.tf).
+# terraform-state-do is reserved if state ever moves off TFC to Spaces.
+
 resource "digitalocean_spaces_bucket" "terraform_state" {
   name   = "terraform-state-do"
   region = "nyc3"

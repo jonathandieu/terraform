@@ -1,0 +1,239 @@
+name: Terraform
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  TF_VERSION: "1.15.6"
+  TF_IN_AUTOMATION: "true"
+
+# Roots with TFC backends. digitalocean/init is bootstrap-only (no remote state).
+# Path filters below must stay in sync with this list.
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - run: terraform fmt -check -recursive
+
+  validate:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        workspace:
+          - clusters/dieubernetes-platform-do-atl1
+          - clusters/dieubernetes-prod-do-atl1
+          - clusters/dieubernetes-stage-do-atl1
+          - shared/cloudflare
+          - shared/failover
+          - modules/digitalocean/doks-cluster
+          - digitalocean/init
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - name: Init
+        working-directory: ${{ matrix.workspace }}
+        run: terraform init -backend=false
+      - name: Validate
+        working-directory: ${{ matrix.workspace }}
+        run: terraform validate
+
+  tflint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: terraform-linters/setup-tflint@v4
+      - run: tflint --init
+      - run: tflint --recursive
+
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      workspaces: ${{ steps.filter.outputs.workspaces }}
+      any: ${{ steps.filter.outputs.any }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+            HEAD="${{ github.sha }}"
+            # First push / force-push edge case
+            if [[ "$BASE" == "0000000000000000000000000000000000000000" ]]; then
+              BASE="$(git rev-parse HEAD~1 2>/dev/null || true)"
+            fi
+          fi
+
+          roots=(
+            clusters/dieubernetes-platform-do-atl1
+            clusters/dieubernetes-prod-do-atl1
+            clusters/dieubernetes-stage-do-atl1
+            shared/cloudflare
+            shared/failover
+          )
+
+          changed=()
+          if [[ -n "${BASE:-}" ]] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            mapfile -t files < <(git diff --name-only "$BASE" "$HEAD")
+          else
+            mapfile -t files < <(git ls-files '*.tf' '*.hcl' 'shared/failover/worker.js')
+          fi
+
+          module_changed=false
+          for f in "${files[@]}"; do
+            [[ "$f" == modules/digitalocean/doks-cluster/* ]] && module_changed=true
+          done
+
+          for root in "${roots[@]}"; do
+            for f in "${files[@]}"; do
+              if [[ "$f" == "$root"/* ]]; then
+                changed+=("$root")
+                break
+              fi
+            done
+            # Module edits affect every cluster root that consumes it
+            if $module_changed && [[ "$root" == clusters/* ]]; then
+              changed+=("$root")
+            fi
+          done
+
+          # Deduplicate
+          if ((${#changed[@]})); then
+            mapfile -t changed < <(printf '%s\n' "${changed[@]}" | sort -u)
+            json=$(printf '%s\n' "${changed[@]}" | jq -R . | jq -sc .)
+            echo "workspaces=$json" >> "$GITHUB_OUTPUT"
+            echo "any=true" >> "$GITHUB_OUTPUT"
+            echo "Changed workspaces: $json"
+          else
+            echo "workspaces=[]" >> "$GITHUB_OUTPUT"
+            echo "any=false" >> "$GITHUB_OUTPUT"
+            echo "No applyable workspace changes"
+          fi
+
+  plan:
+    needs: [fmt, validate, changes]
+    if: github.event_name == 'pull_request' && needs.changes.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        workspace: ${{ fromJson(needs.changes.outputs.workspaces) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - name: Init
+        working-directory: ${{ matrix.workspace }}
+        env:
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_app_terraform_io }}
+          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: terraform init
+      - name: Plan
+        id: plan
+        working-directory: ${{ matrix.workspace }}
+        env:
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_app_terraform_io }}
+          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_argocd_admin_password_bcrypt: ${{ secrets.TF_VAR_argocd_admin_password_bcrypt }}
+        run: |
+          set -euo pipefail
+          set +e
+          terraform plan -no-color -input=false -out=tfplan 2>&1 | tee plan.txt
+          ec=${PIPESTATUS[0]}
+          set -e
+          echo "exit_code=$ec" >> "$GITHUB_OUTPUT"
+          exit "$ec"
+      - name: Comment plan
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = '${{ matrix.workspace }}';
+            let body = `### terraform plan \`${path}\`\n\n`;
+            try {
+              const plan = fs.readFileSync(`${path}/plan.txt`, 'utf8');
+              const clipped = plan.length > 60000 ? plan.slice(0, 60000) + '\n…truncated' : plan;
+              body += '```\n' + clipped + '\n```';
+            } catch (e) {
+              body += `_No plan output (${e.message})_`;
+            }
+            const marker = `<!-- tf-plan:${path} -->`;
+            body = marker + '\n' + body;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+  apply:
+    needs: [fmt, validate, changes]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.changes.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        workspace: ${{ fromJson(needs.changes.outputs.workspaces) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - name: Init
+        working-directory: ${{ matrix.workspace }}
+        env:
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_app_terraform_io }}
+          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: terraform init
+      - name: Apply
+        working-directory: ${{ matrix.workspace }}
+        env:
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_TOKEN_app_terraform_io }}
+          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_argocd_admin_password_bcrypt: ${{ secrets.TF_VAR_argocd_admin_password_bcrypt }}
+        run: terraform apply -auto-approve -input=false
