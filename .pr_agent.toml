@@ -1,0 +1,61 @@
+# Catalog ids from https://docs.digitalocean.com/products/inference/details/models/ (2026-10-09).
+# OPENAI.API_BASE is set in the workflow; repo-local openai.api_base is ignored.
+# Workflow env is the live source until this file is on the default branch.
+
+[config]
+model = "deepseek-v4.1-flash"
+fallback_models = ["llama-4-maverick", "glm-5.3-flash"]
+custom_model_max_tokens = 128000
+restricted_mode = true
+enable_auto_approval = false
+enable_per_directory_settings = false
+publish_output_progress = false
+
+[github_action_config]
+auto_review = true
+auto_describe = false
+auto_improve = false
+handle_push_trigger = true
+fail_on_tool_errors = false
+pr_actions = ["opened", "ready_for_review", "labeled"]
+push_commands = ["/review"]
+
+[github]
+publish_as_check_run = false
+ignore_bot_pr = true
+
+[pr_reviewer]
+inline_key_issues = false
+enable_review_labels_security = false
+enable_review_labels_effort = false
+require_merge_recommendation = false
+extra_instructions = """\
+Review the git/HCL diff always. If terraform plan text is present (CI Artifact from plan comments), \
+interpret destroys, forced replacements, terraform state rm, unencrypted secrets, \
+Cloudflare DNS/email blast radius, and dropped prevent_destroy. If no plan is present, \
+still review the HCL and say the plan layer was unavailable. \
+Do not repeat secret values. Comment only; do not approve or request changes.
+"""
+
+[pr_code_suggestions]
+committable_code_suggestions = false
+approve_pr_on_self_review = false
+
+[pr_update_changelog]
+push_changelog_changes = false
+
+[litellm]
+custom_llm_provider = "openai"
+drop_params = true
+
+[artifacts]
+enable = false
+target_tools = ["pr_reviewer"]
+max_artifact_size = 50000
+artifact_instructions = """\
+This is terraform plan text copied from github-actions[bot] comments that terraform.yml posts \
+(marker <!-- tf-plan:workspace -->). Interpret destroys, forced replacements, terraform state rm, \
+unencrypted secrets, Cloudflare DNS/email blast radius, and dropped prevent_destroy. \
+Do not repeat secret values. If a workspace plan is missing or failed, say so and still review the HCL diff. \
+Comment only; do not approve or request changes.
+"""

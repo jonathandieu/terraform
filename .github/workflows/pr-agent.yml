@@ -1,0 +1,204 @@
+# Comment-only PR-Agent (The-PR-Agent OSS). Not a merge gate for LLM output.
+# Auto /review on opened, synchronize, ready_for_review. Slash /review and /ask
+# stay for repo writers. No checkout. No pull_request_target.
+# Pin is the 0.47.0-github_action image index digest from Docker Hub (2026-10-02).
+# the-pr-agent/pr-agent action.yaml FROM is the floating :github_action tag, so the
+# image digest is the real pin. OPENAI.API_BASE is host-only; ignored in .pr_agent.toml.
+# Missing DO_INFERENCE_API_KEY fails the job. LLM errors do not.
+# Missing TF_TOKEN_app_terraform_io / DIGITALOCEAN_TOKEN / CLOUDFLARE_API_TOKEN
+# must not fail this job: HCL diff review always runs; plan text is best-effort.
+#
+# Plan layer: cleanup/apply-on-merge terraform.yml posts github-actions[bot]
+# comments marked <!-- tf-plan:<workspace> --> (no plan artifact). This workflow
+# scrapes those comments into ARTIFACT_PATH when present, and re-runs after the
+# Terraform workflow completes (workflow_run). Until terraform.yml is on the
+# default branch, auto review is HCL-diff only.
+
+name: PR-Agent
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, labeled]
+  issue_comment:
+    types: [created]
+  workflow_run:
+    workflows: ["Terraform"]
+    types: [completed]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: pr-agent-${{ github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.pull_requests[0].number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  pr-agent:
+    if: >
+      (
+        github.event_name == 'workflow_run'
+        && github.event.workflow_run.event == 'pull_request'
+        && github.event.workflow_run.conclusion != 'cancelled'
+        && github.event.workflow_run.pull_requests[0].number
+      )
+      || (
+        github.event.sender.type != 'Bot'
+        && (
+          (
+            github.event_name == 'issue_comment'
+            && github.event.issue.pull_request
+            && (
+              startsWith(format('{0} ', github.event.comment.body), '/review ')
+              || startsWith(format('{0} ', github.event.comment.body), '/ask ')
+            )
+            && (
+              github.event.comment.author_association == 'OWNER'
+              || github.event.comment.author_association == 'MEMBER'
+              || github.event.comment.author_association == 'COLLABORATOR'
+            )
+          )
+          || (
+            github.event_name == 'pull_request'
+            && github.event.pull_request.head.repo.full_name == github.repository
+            && (
+              github.event.action == 'ready_for_review'
+              || (github.event.action == 'labeled' && github.event.label.name == 'pr-agent')
+              || (
+                github.event.pull_request.draft == false
+                && (
+                  github.event.action == 'opened'
+                  || github.event.action == 'synchronize'
+                )
+              )
+            )
+          )
+        )
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    name: Comment-only review
+    steps:
+      - name: Skip fork pull requests
+        id: fork
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.pull_requests[0].number }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          same=true
+          if [ "${EVENT_NAME}" = "issue_comment" ]; then
+            same=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${ISSUE_NUMBER}" --jq '.head.repo.full_name == .base.repo.full_name')
+          elif [ "${EVENT_NAME}" = "workflow_run" ]; then
+            meta=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '{same: (.head.repo.full_name == .base.repo.full_name), draft: .draft}')
+            same=$(printf '%s' "${meta}" | jq -r '.same')
+            draft=$(printf '%s' "${meta}" | jq -r '.draft')
+            if [ "${draft}" = "true" ]; then
+              same=false
+            fi
+          fi
+          echo "same_repo=${same}" >> "${GITHUB_OUTPUT}"
+
+      - name: Require DO_INFERENCE_API_KEY
+        if: steps.fork.outputs.same_repo == 'true'
+        env:
+          KEY: ${{ secrets.DO_INFERENCE_API_KEY }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.pull_requests[0].number }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          marker='<!-- pr-agent-missing-secret -->'
+          ids=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --paginate \
+            --jq '.[] | select(.user.login == "github-actions[bot]") | select(.body | contains("<!-- pr-agent-missing-secret -->")) | .id')
+
+          if [ -n "${KEY}" ]; then
+            for id in ${ids}; do
+              gh api -X DELETE "repos/${GITHUB_REPOSITORY}/issues/comments/${id}" || true
+            done
+            exit 0
+          fi
+
+          if [ -z "${ids}" ]; then
+            body=$(printf '%s\n%s\n\n%s' \
+              "${marker}" \
+              'PR-Agent did not run: repo Actions secret `DO_INFERENCE_API_KEY` is missing.' \
+              'Add a DigitalOcean Inference model access key (Control Panel → Inference → Model Access Keys) as that secret. Not a droplet PAT. This check stays red until it exists.')
+            gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" -f body="${body}"
+          fi
+
+          echo '::error::DO_INFERENCE_API_KEY is missing. Add it as a repo Actions secret.'
+          exit 1
+
+      - name: Collect terraform plan comments
+        if: steps.fork.outputs.same_repo == 'true'
+        id: plan
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number || github.event.workflow_run.pull_requests[0].number }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp)"
+          if ! gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --paginate \
+            --jq '.[] | select(.user.login == "github-actions[bot]") | select(.body | contains("<!-- tf-plan:")) | .body' \
+            > "${tmp}"; then
+            echo '::warning::Could not list PR comments for terraform plan context. Continuing with HCL diff only.'
+            rm -f "${tmp}"
+            echo "present=false" >> "${GITHUB_OUTPUT}"
+            echo "path=" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          if grep -q '<!-- tf-plan:' "${tmp}"; then
+            mv "${tmp}" "${GITHUB_WORKSPACE}/pr-agent-tf-plan.txt"
+            echo "present=true" >> "${GITHUB_OUTPUT}"
+            echo "path=pr-agent-tf-plan.txt" >> "${GITHUB_OUTPUT}"
+          else
+            rm -f "${tmp}"
+            echo "present=false" >> "${GITHUB_OUTPUT}"
+            echo "path=" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: PR Agent
+        if: steps.fork.outputs.same_repo == 'true'
+        id: pragent
+        continue-on-error: true
+        uses: docker://pragent/pr-agent@sha256:31b9aac6ab067bada9a0c1b001d30ebc500ea4487e00a93c18c59b9ef5fa66db # 0.47.0-github_action
+        env:
+          OPENAI_KEY: ${{ secrets.DO_INFERENCE_API_KEY }}
+          OPENAI.API_BASE: https://inference.do-ai.run/v1
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ARTIFACT_PATH: ${{ steps.plan.outputs.path }}
+          ARTIFACT_INSTRUCTIONS: "This is terraform plan text copied from github-actions[bot] comments that terraform.yml posts (marker <!-- tf-plan:workspace -->). Interpret destroys, forced replacements, terraform state rm, unencrypted secrets, Cloudflare DNS/email blast radius, and dropped prevent_destroy. Do not repeat secret values. If a workspace plan is missing or failed, say so and still review the HCL diff. Comment only; do not approve or request changes."
+          github_action_config.auto_review: "true"
+          github_action_config.auto_describe: "false"
+          github_action_config.auto_improve: "false"
+          github_action_config.handle_push_trigger: "true"
+          github_action_config.push_commands: '["/review"]'
+          github_action_config.fail_on_tool_errors: "false"
+          github_action_config.pr_actions: '["opened", "ready_for_review", "labeled"]'
+          config.restricted_mode: "true"
+          config.enable_auto_approval: "false"
+          config.enable_per_directory_settings: "false"
+          config.publish_output_progress: "false"
+          config.model: "deepseek-v4.1-flash"
+          config.fallback_models: '["llama-4-maverick", "glm-5.3-flash"]'
+          config.custom_model_max_tokens: "128000"
+          github.publish_as_check_run: "false"
+          github.ignore_bot_pr: "true"
+          pr_reviewer.inline_key_issues: "false"
+          pr_reviewer.enable_review_labels_security: "false"
+          pr_reviewer.enable_review_labels_effort: "false"
+          pr_reviewer.require_merge_recommendation: "false"
+          pr_code_suggestions.committable_code_suggestions: "false"
+          pr_code_suggestions.approve_pr_on_self_review: "false"
+          pr_update_changelog.push_changelog_changes: "false"
+          litellm.custom_llm_provider: "openai"
+          litellm.drop_params: "true"
+          artifacts.target_tools: '["pr_reviewer"]'
+          artifacts.max_artifact_size: "50000"
+          pr_reviewer.extra_instructions: "Review the git/HCL diff always. If terraform plan text is present (CI Artifact from plan comments), interpret destroys, forced replacements, terraform state rm, unencrypted secrets, Cloudflare DNS/email blast radius, and dropped prevent_destroy. If no plan is present, still review the HCL and say the plan layer was unavailable. Do not repeat secret values. Comment only; do not approve or request changes."
