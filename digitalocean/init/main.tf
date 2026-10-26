@@ -61,3 +61,30 @@ output "loki_bucket_endpoint" {
   description = "Endpoint URL for the Loki Spaces bucket"
   value       = digitalocean_spaces_bucket.loki.endpoint
 }
+
+# Metrics storage for self-hosted Mimir (dieubernetes charts/infrastructure/mimir).
+# Same account-wide Spaces key as Loki (var.spaces_access_id/spaces_secret_key);
+# DO Spaces keys are not bucket-scoped.
+resource "digitalocean_spaces_bucket" "mimir" {
+  name   = "dieubernetes-mimir"
+  region = "nyc3"
+
+  lifecycle_rule {
+    id      = "cleanup_old_blocks"
+    enabled = true
+
+    noncurrent_version_expiration {
+      days = 30
+    }
+  }
+}
+
+output "mimir_bucket_name" {
+  description = "Name of the Spaces bucket for Mimir metrics storage"
+  value       = digitalocean_spaces_bucket.mimir.name
+}
+
+output "mimir_bucket_endpoint" {
+  description = "Endpoint URL for the Mimir Spaces bucket"
+  value       = digitalocean_spaces_bucket.mimir.endpoint
+}
