@@ -1,0 +1,45 @@
+name: Terraform
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  TF_VERSION: "1.15.6"
+  TF_IN_AUTOMATION: "true"
+
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - run: terraform fmt -check -recursive
+
+  validate:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        workspace:
+          - digitalocean/init
+          - digitalocean/spaces
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - name: Init
+        working-directory: ${{ matrix.workspace }}
+        run: terraform init -backend=false
+      - name: Validate
+        working-directory: ${{ matrix.workspace }}
+        run: terraform validate
