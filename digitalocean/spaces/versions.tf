@@ -1,0 +1,12 @@
+terraform {
+  required_version = ">= 1.10"
+
+  required_providers {
+    digitalocean = {
+      source  = "digitalocean/digitalocean"
+      version = "2.69.0"
+    }
+  }
+}
+
+provider "digitalocean" {}
