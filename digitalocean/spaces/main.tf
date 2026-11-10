@@ -2,7 +2,7 @@
 # Spaces keys are account-wide (not bucket-scoped); provider reads
 # DIGITALOCEAN_TOKEN, SPACES_ACCESS_KEY_ID, SPACES_SECRET_ACCESS_KEY.
 resource "digitalocean_spaces_bucket" "loki" {
-  name   = "dieubernetes-loki"
+  name   = "dieubernetes-logs"
   region = "nyc3"
 
   lifecycle_rule {
@@ -27,7 +27,7 @@ output "loki_bucket_endpoint" {
 
 # Metrics storage for self-hosted Mimir (dieubernetes charts/infrastructure/mimir).
 resource "digitalocean_spaces_bucket" "mimir" {
-  name   = "dieubernetes-mimir"
+  name   = "dieubernetes-metrics"
   region = "nyc3"
 
   lifecycle_rule {
